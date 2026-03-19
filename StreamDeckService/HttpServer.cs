@@ -1,21 +1,11 @@
-﻿using System;
-using System.IO;
-using System.Net;
+﻿using System.Net;
 using System.Net.Sockets;
-using System.Threading;
 
-class HttpServer
+class HttpServer(int port, Func<string, bool> handleRequest, CancellationToken cancellationToken)
 {
-    private TcpListener listener;
-    private Func<string, bool> handleRequest;
-    private CancellationToken cancellationToken;
-
-    public HttpServer(int port, Func<string, bool> handleRequest, CancellationToken cancellationToken)
-    {
-        this.listener = new TcpListener(IPAddress.Any, port);
-        this.handleRequest = handleRequest;
-        this.cancellationToken = cancellationToken;
-    }
+    private readonly TcpListener listener = new(IPAddress.Any, port);
+    private readonly Func<string, bool> handleRequest = handleRequest;
+    private readonly CancellationToken cancellationToken = cancellationToken;
 
     public void Run()
     {
@@ -26,22 +16,13 @@ class HttpServer
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                if (listener.Pending())
+                using (TcpClient client = listener.AcceptTcpClient())
+                using (NetworkStream stream = client.GetStream())
+                using (StreamReader reader = new StreamReader(stream))
+                using (StreamWriter writer = new StreamWriter(stream))
                 {
-                    using (TcpClient client = listener.AcceptTcpClient())
-                    using (NetworkStream stream = client.GetStream())
-                    using (StreamReader reader = new StreamReader(stream))
-                    using (StreamWriter writer = new StreamWriter(stream))
-                    {
-                        string requestLine = reader.ReadLine();
-                        string responseStatus = ProcessRequest(requestLine);
-                        SendResponse(writer, responseStatus);
-                    }
-                }
-                else
-                {
-                    // To avoid busy waiting, sleep a bit
-                    Thread.Sleep(25); // Sleep for 25 milliseconds
+                    string responseStatus = ProcessRequest(reader.ReadLine() ?? "");
+                    SendResponse(writer, responseStatus);
                 }
             }
         }
@@ -74,12 +55,10 @@ class HttpServer
             return "HTTP/1.0 400 Bad Request\r\n";
         }
 
-        string path = tokens[1];
-        bool handleResult = handleRequest(path);
-        return handleResult ? "HTTP/1.0 200 OK\r\n" : "HTTP/1.0 400 Bad Request\r\n";
+        return handleRequest(tokens[1]) ? "HTTP/1.0 200 OK\r\n" : "HTTP/1.0 400 Bad Request\r\n";
     }
 
-    private void SendResponse(StreamWriter writer, string responseStatus)
+    private static void SendResponse(StreamWriter writer, string responseStatus)
     {
         writer.WriteLine(responseStatus);
         writer.WriteLine("Connection: close\r\n");

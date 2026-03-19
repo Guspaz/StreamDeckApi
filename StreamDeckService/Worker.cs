@@ -1,24 +1,19 @@
 namespace StreamDeckService
 {
+    using System.Reflection;
     using OpenMacroBoard.SDK;
     using StreamDeckSharp;
 
-    public class Worker : BackgroundService
+    public class Worker(ILogger<Worker> logger) : BackgroundService
     {
-        private readonly ILogger<Worker> _logger;
-        private List<IMacroBoard> decks = new();
+        private readonly List<IMacroBoard> decks = [];
         private byte brightness = 15;
-
-        public Worker(ILogger<Worker> logger)
-        {
-            _logger = logger;
-        }
 
         private void Log(string log)
         {
-            if (_logger.IsEnabled(LogLevel.Information))
+            if (logger.IsEnabled(LogLevel.Information))
             {
-                _logger.LogInformation(log);
+                logger.LogInformation(log);
             }
         }
 
@@ -29,8 +24,8 @@ namespace StreamDeckService
             foreach (var deck in StreamDeck.EnumerateDevices())
             {
                 var openDeck = deck.Open();
+                openDeck.KeyStateChanged += (sender, e) => (sender as IMacroBoard)?.SetBrightness(brightness);
                 decks.Add(openDeck);
-                openDeck.KeyStateChanged += this.OpenDeck_KeyStateChanged;
             }
 
             try
@@ -40,21 +35,16 @@ namespace StreamDeckService
             catch (TaskCanceledException) { }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "{Message}", ex.Message);
+                logger.LogError(ex, "{Message}", ex.Message);
                 Environment.Exit(1);
             }
-        }
-
-        private void OpenDeck_KeyStateChanged(object? sender, KeyEventArgs e)
-        {
-            (sender as IMacroBoard)?.SetBrightness(brightness);
         }
 
         private bool HandleRequest(string path)
         {
             if (path.StartsWith("/setBrightness/"))
             {
-                string brightstr = path.Substring(15);
+                string brightstr = path[15..];
 
                 Console.WriteLine($"Setting brightness to: {brightstr}");
 
@@ -63,11 +53,8 @@ namespace StreamDeckService
                     decks.ForEach(d => d.SetBrightness(brightness));
                     return true;
                 }
-                else
-                {
-                    Console.WriteLine($"Invalid brightness: {brightstr}");
-                    return false;
-                }
+
+                Console.WriteLine($"Invalid brightness: {brightstr}");
             }
 
             return false;
