@@ -6,7 +6,8 @@ namespace StreamDeckService
     public class Worker : BackgroundService
     {
         private readonly ILogger<Worker> _logger;
-        List<IMacroBoard> decks = new();
+        private List<IMacroBoard> decks = new();
+        private byte brightness = 15;
 
         public Worker(ILogger<Worker> logger)
         {
@@ -27,7 +28,9 @@ namespace StreamDeckService
 
             foreach (var deck in StreamDeck.EnumerateDevices())
             {
-                decks.Add(deck.Open());
+                var openDeck = deck.Open();
+                decks.Add(openDeck);
+                openDeck.KeyStateChanged += this.OpenDeck_KeyStateChanged;
             }
 
             try
@@ -42,22 +45,27 @@ namespace StreamDeckService
             }
         }
 
+        private void OpenDeck_KeyStateChanged(object? sender, KeyEventArgs e)
+        {
+            (sender as IMacroBoard)?.SetBrightness(brightness);
+        }
+
         private bool HandleRequest(string path)
         {
             if (path.StartsWith("/setBrightness/"))
             {
-                string brightness = path.Substring(15);
+                string brightstr = path.Substring(15);
 
-                Console.WriteLine($"Setting brightness to: {brightness}");
+                Console.WriteLine($"Setting brightness to: {brightstr}");
 
-                if (byte.TryParse(brightness, out byte value))
+                if (byte.TryParse(brightstr, out brightness))
                 {
-                    decks.ForEach(d => d.SetBrightness(Convert.ToByte(brightness)));
+                    decks.ForEach(d => d.SetBrightness(brightness));
                     return true;
                 }
                 else
                 {
-                    Console.WriteLine($"Invalid brightness: {brightness}");
+                    Console.WriteLine($"Invalid brightness: {brightstr}");
                     return false;
                 }
             }
@@ -66,89 +74,3 @@ namespace StreamDeckService
         }
     }
 }
-
-
-//using OpenMacroBoard.SDK;
-//using PeanutButter.SimpleHTTPServer;
-//using PeanutButter.Utils;
-//using StreamDeckSharp;
-
-//namespace StreamDeckService
-//{
-//    public class Worker : BackgroundService
-//    {
-//        private readonly ILogger<Worker> _logger;
-//        List<IMacroBoard> decks = new();
-
-//        public Worker(ILogger<Worker> logger)
-//        {
-//            _logger = logger;
-//        }
-
-//        private void Log(string log)
-//        {
-//            if (_logger.IsEnabled(LogLevel.Information))
-//            {
-//                _logger.LogInformation(log);
-//            }
-//        }
-
-//        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-//        {
-//            Log($"Worker running at: {DateTimeOffset.Now}");
-
-//            StreamDeck.EnumerateDevices().ForEach(d => decks.Add(d.Open()));
-
-//            try
-//            {
-//                while (!stoppingToken.IsCancellationRequested)
-//                {
-//                    var http = new PeanutButter.SimpleHTTPServer.HttpServer(8081, true, null);
-//                    http.AddHandler(handler);
-//                    Log("Listening on port 8081");
-
-//                    while (http.IsListening && !stoppingToken.IsCancellationRequested)
-//                    {
-//                        await Task.Delay(1000, stoppingToken);
-//                    }
-//                }
-//            }
-//            catch (TaskCanceledException) { }
-//            catch (Exception ex)
-//            {
-//                _logger.LogError(ex, "{Message}", ex.Message);
-//                Environment.Exit(1);
-//            }
-//        }
-
-//        HttpServerPipelineResult handler(HttpProcessor processor, Stream stream)
-//        {
-//            Console.WriteLine("Request: " + processor.FullPath);
-
-//            if (processor.FullPath.StartsWith("/setBrightness/"))
-//            {
-//                string brightness = processor.FullPath.Substring(15);
-
-//                Console.WriteLine($"Setting brightness to: {brightness}");
-//                if (byte.TryParse(brightness, out byte value))
-//                {
-//                    decks.ForEach(d => d.SetBrightness(Convert.ToByte(brightness)));
-//                    processor.WriteOKStatusHeader();
-//                    processor.WriteDocument("200");
-//                }
-//                else
-//                {
-//                    Console.WriteLine($"Invalid brightness: {brightness}");
-//                    processor.WriteFailure(System.Net.HttpStatusCode.BadRequest, "INVALID BRIGHTNESS", "400");
-//                }
-//            }
-//            else
-//            {
-//                processor.WriteFailure(System.Net.HttpStatusCode.NotFound, "NOT FOUND", "404");
-//            }
-
-//            return HttpServerPipelineResult.Handled;
-//        }
-
-//    }
-//}
